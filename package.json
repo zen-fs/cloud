@@ -1,7 +1,7 @@
 {
-	"name": "@zenfs/dropbox",
-	"version": "0.0.1",
-	"description": "ZenFS Dropbox backend",
+	"name": "@zenfs/cloud",
+	"version": "0.0.0",
+	"description": "ZenFS Cloud backends",
 	"funding": {
 		"type": "individual",
 		"url": "https://github.com/sponsors/james-pre"
@@ -10,10 +10,11 @@
 	"types": "src/index.ts",
 	"keywords": [
 		"filesystem",
-		"dropbox"
+		"dropbox",
+		"S3"
 	],
 	"type": "module",
-	"homepage": "https://github.com/zen-fs/dropbox",
+	"homepage": "https://github.com/zen-fs/cloud",
 	"author": "James Prevett <jp@jamespre.dev> (https://jamespre.dev)",
 	"contributors": [
 		"John Vilk <jvilk@cs.umass.edu> (http://people.cs.umass.edu/~jvilk)"
@@ -21,10 +22,10 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/zen-fs/dropbox.git"
+		"url": "git+https://github.com/zen-fs/cloud.git"
 	},
 	"bugs": {
-		"url": "https://github.com/zen-fs/dropbox/issues"
+		"url": "https://github.com/zen-fs/cloud/issues"
 	},
 	"engines": {
 		"node": ">= 18"
@@ -44,7 +45,7 @@
 		"format:check": "prettier --check .",
 		"lint": "eslint src",
 		"build": "tsc -p tsconfig.json",
-		"build:docs": "typedoc --out docs --name 'ZenFS Dropbox' src/index.ts",
+		"build:docs": "typedoc --out docs --name 'ZenFS Cloud' src/index.ts",
 		"test": "#tsx --test --experimental-test-coverage",
 		"prepublishOnly": "npm run build"
 	},
@@ -62,7 +63,7 @@
 	"peerDependencies": {
 		"@zenfs/core": "^1.0.4"
 	},
-	"dependencies": {
+	"optionalDependencies": {
 		"dropbox": "^10.34.0"
 	}
 }
