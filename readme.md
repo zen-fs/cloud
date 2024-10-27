@@ -29,7 +29,7 @@ npm install @zenfs/cloud
 
 ```ts
 import { configure, fs } from '@zenfs/core';
-import { Dropbox } from '@zenfs/dropbox';
+import { Dropbox } from '@zenfs/cloud';
 import { Dropbox as DropboxClient } from 'dropbox';
 
 const client = new DropboxClient({
@@ -41,6 +41,28 @@ await configure({
 	mounts: {
 		'/mnt/dropbox': {
 			backend: Dropbox,
+			client,
+		},
+	},
+});
+```
+
+#### S3
+
+```ts
+import { configure, fs } from '@zenfs/core';
+import { S3Bucket } from '@zenfs/cloud';
+import { S3 } from '@aws-sdk/client-s3';
+
+const client = new S3({
+	// ...
+});
+
+await configure({
+	mounts: {
+		'/mnt/s3': {
+			backend: S3Bucket,
+			bucketName: 'your-bucket',
 			client,
 		},
 	},

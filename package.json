@@ -17,6 +17,7 @@
 	"homepage": "https://github.com/zen-fs/cloud",
 	"author": "James Prevett <jp@jamespre.dev> (https://jamespre.dev)",
 	"contributors": [
+		"Marcos Candeia <marrcooos@gmail.com>",
 		"John Vilk <jvilk@cs.umass.edu> (http://people.cs.umass.edu/~jvilk)"
 	],
 	"license": "MIT",
@@ -64,6 +65,7 @@
 		"@zenfs/core": "^1.0.4"
 	},
 	"optionalDependencies": {
-		"dropbox": "^10.34.0"
+		"dropbox": "^10.34.0",
+		"@aws-sdk/client-s3": "^3.679.0"
 	}
 }
