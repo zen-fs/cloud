@@ -16,20 +16,16 @@ For more information, see the [API documentation](https://zenfs.dev/cloud).
 > [!IMPORTANT]
 > Please read the [ZenFS core documentation](https://zenfs.dev/core)!
 
-## Installing
+### Installing
 
 ```sh
 npm install @zenfs/cloud
 ```
 
-## Usage
-
 > [!NOTE]
-> The examples are written in ESM.  
-> For CJS, you can `require` the package.  
-> If using a browser environment, you can use a `<script>` with `type=module` (you may need to use import maps)
+> Examples are written using ESM.
 
-#### Dropbox
+## Dropbox
 
 ```ts
 import { configure, fs } from '@zenfs/core';
@@ -51,7 +47,10 @@ await configure({
 });
 ```
 
-#### S3
+## S3
+
+> [!CAUTION]
+> This backend is still in the process of being developed and is not stable.
 
 ```ts
 import { configure, fs } from '@zenfs/core';
