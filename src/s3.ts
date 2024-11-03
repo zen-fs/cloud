@@ -1,7 +1,7 @@
 import type { S3 } from '@aws-sdk/client-s3';
 import { Async, type Backend, type File, FileSystem, InMemory, PreloadFile, Stats, type StatsLike, ErrnoError } from '@zenfs/core';
 import { S_IFDIR, S_IFMT } from '@zenfs/core/emulation/constants.js';
-import { join } from '@zenfs/core/emulation/path.js';
+import { join } from '@zenfs/core/path';
 
 export type Metadata = Partial<Record<keyof StatsLike, string>>;
 
@@ -135,7 +135,7 @@ export class S3FileSystem extends Async(FileSystem) {
 	}
 
 	public async rmdir(path: string): Promise<void> {
-		if (path === '/') {
+		if (path == '/') {
 			throw ErrnoError.With('EPERM', path, 'rmdir');
 		}
 		const contents = await this.readdir(path);

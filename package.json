@@ -62,10 +62,10 @@
 		"typescript-eslint": "^8.8.0"
 	},
 	"peerDependencies": {
-		"@zenfs/core": "^1.0.4"
+		"@zenfs/core": "^1.1.0"
 	},
 	"optionalDependencies": {
-		"dropbox": "^10.34.0",
-		"@aws-sdk/client-s3": "^3.679.0"
+		"@aws-sdk/client-s3": "^3.679.0",
+		"dropbox": "^10.34.0"
 	}
 }
