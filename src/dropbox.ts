@@ -149,7 +149,7 @@ export class DropboxFS extends Async(FileSystem) {
 		switch (result['.tag']) {
 			case 'file':
 				return new Stats({
-					mode: result.symlink_info ? S_IFLNK : S_IFREG,
+					mode: (result.symlink_info ? S_IFLNK : S_IFREG) | 0o777,
 					size: result.symlink_info?.target?.length || result.size,
 					atimeMs: Date.now(),
 					mtimeMs: Date.parse(result.server_modified),
