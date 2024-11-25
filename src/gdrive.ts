@@ -1,10 +1,9 @@
-import { Async, type Backend, Errno, ErrnoError, type File, FileSystem, PreloadFile, Stats } from '@zenfs/core';
+import { Async, type Backend, encodeRaw, Errno, ErrnoError, type File, FileSystem, PreloadFile, Stats } from '@zenfs/core';
 import { S_IFDIR, S_IFREG } from '@zenfs/core/emulation/constants.js';
 import { dirname, join } from '@zenfs/core/path';
 
 import 'gapi';
 import 'gapi.client.drive-v3';
-type GapiClient = typeof gapi;
 
 type DriveError = Error & { code?: number };
 
@@ -36,10 +35,9 @@ export class GoogleDriveFS extends Async(FileSystem) {
 		/**
 		 * A fully authenticated Google APIs client.
 		 */
-		protected gapi: GapiClient
+		protected drive: typeof gapi.client.drive
 	) {
 		super();
-		if (!gapi?.client?.drive) throw new ErrnoError(Errno.EINVAL, 'GAPI is missing Google Drive client library');
 
 		this.pathCache.set('/', 'root');
 	}
@@ -78,7 +76,7 @@ export class GoogleDriveFS extends Async(FileSystem) {
 				}
 
 				// Don't encode the query, use the raw segment name
-				const response = await this.gapi.client.drive.files.list({
+				const response = await this.drive.files.list({
 					q: `name = '${segment}' and '${parentId}' in parents and trashed = false`,
 					fields: 'files(id, name, mimeType)',
 					spaces: 'drive',
@@ -120,7 +118,7 @@ export class GoogleDriveFS extends Async(FileSystem) {
 		try {
 			const fileId = await this.getFileId(oldPath);
 			const name = this.getNameFromPath(newPath);
-			await this.gapi.client.drive.files.update({ fileId, resource: { name } });
+			await this.drive.files.update({ fileId, resource: { name } });
 			this.clearCaches(oldPath);
 			this.clearCaches(newPath);
 		} catch (error) {
@@ -142,7 +140,7 @@ export class GoogleDriveFS extends Async(FileSystem) {
 			}
 
 			const fileId = await this.getFileId(path);
-			const response = await this.gapi.client.drive.files.get({
+			const response = await this.drive.files.get({
 				fileId,
 				fields: 'mimeType, size, modifiedTime',
 			});
@@ -174,28 +172,20 @@ export class GoogleDriveFS extends Async(FileSystem) {
 			const fileId = await this.getFileId(path);
 
 			// First get the file metadata to check its type
-			const metadata = await this.gapi.client.drive.files.get({ fileId, fields: 'mimeType, size' });
+			const metadata = await this.drive.files.get({ fileId, fields: 'mimeType, size' });
 
 			// If it's a Google Doc, we need to export it
 			const isGoogleDoc = metadata.result.mimeType?.startsWith('application/vnd.google-apps.');
 
-			const url = 'https://www.googleapis.com/drive/v3/files/' + fileId + (isGoogleDoc ? '/export?mimeType=text/plain' : '?alt=media');
-			const response = await fetch(url, { headers: { Authorization: `Bearer ${this.gapi.auth.getToken().access_token}` } });
-
-			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
-			}
-
-			const arrayBuffer = await response.arrayBuffer();
-			const content = new Uint8Array(arrayBuffer);
+			const result = isGoogleDoc ? await this.drive.files.export({ fileId, mimeType: 'text/plain' }) : await this.drive.files.get({ fileId, alt: 'media' });
 
 			// Create new stats with actual content size
-			const stats = new Stats({ mode: S_IFREG | 0o666, size: content.length });
+			const stats = new Stats({ mode: S_IFREG | 0o666, size: result.body.length });
 
 			// Update stats cache with actual size
 			this.statsCache.set(path, stats);
 
-			return new PreloadFile(this, path, flag, stats, content);
+			return new PreloadFile(this, path, flag, stats, encodeRaw(result.body));
 		} catch (error) {
 			throw convertError(error as DriveError, path, 'openFile');
 		}
@@ -203,7 +193,7 @@ export class GoogleDriveFS extends Async(FileSystem) {
 
 	public async createFile(path: string, flag: string, mode: number): Promise<File> {
 		try {
-			const response = await this.gapi.client.drive.files.create({
+			const response = await this.drive.files.create({
 				resource: {
 					name: path.split('/').pop(),
 					mimeType: 'application/octet-stream',
@@ -233,7 +223,7 @@ export class GoogleDriveFS extends Async(FileSystem) {
 	public async unlink(path: string): Promise<void> {
 		try {
 			const fileId = await this.getFileId(path);
-			await this.gapi.client.drive.files.delete({ fileId });
+			await this.drive.files.delete({ fileId });
 			this.clearCaches(path);
 		} catch (error) {
 			throw convertError(error as DriveError, path, 'unlink');
@@ -243,7 +233,7 @@ export class GoogleDriveFS extends Async(FileSystem) {
 	public async mkdir(path: string): Promise<void> {
 		try {
 			const fileName = this.getNameFromPath(path);
-			const response = await this.gapi.client.drive.files.create({
+			const response = await this.drive.files.create({
 				resource: { name: fileName, mimeType: 'application/vnd.google-apps.folder' },
 				fields: 'id',
 			});
@@ -259,7 +249,7 @@ export class GoogleDriveFS extends Async(FileSystem) {
 	public async rmdir(path: string): Promise<void> {
 		try {
 			const fileId = await this.getFileId(path);
-			await this.gapi.client.drive.files.delete({ fileId });
+			await this.drive.files.delete({ fileId });
 			this.clearCaches(path);
 		} catch (error) {
 			throw convertError(error as DriveError, path, 'rmdir');
@@ -273,7 +263,7 @@ export class GoogleDriveFS extends Async(FileSystem) {
 
 		try {
 			const parentId = await this.getFileId(path);
-			const response = await this.gapi.client.drive.files.list({
+			const response = await this.drive.files.list({
 				q: `'${parentId}' in parents and trashed = false`,
 				fields: 'files(id, name, mimeType)',
 				spaces: 'drive',
@@ -296,7 +286,7 @@ export class GoogleDriveFS extends Async(FileSystem) {
 		try {
 			const fileId = await this.getFileId(path);
 
-			await this.gapi.client.drive.files.update({
+			await this.drive.files.update({
 				fileId,
 				resource: {
 					name: path.split('/').pop(),
@@ -321,17 +311,17 @@ export class GoogleDriveFS extends Async(FileSystem) {
 }
 
 export interface GoogleDriveOptions {
-	gapi: GapiClient;
+	drive: typeof gapi.client.drive;
 }
 
 export const GoogleDrive = {
 	name: 'GoogleDrive',
 
 	options: {
-		gapi: {
+		drive: {
 			type: 'object',
 			required: true,
-			description: 'Google API client instance',
+			description: '',
 		},
 	},
 
@@ -340,6 +330,6 @@ export const GoogleDrive = {
 	},
 
 	create(options: GoogleDriveOptions) {
-		return new GoogleDriveFS(options.gapi);
+		return new GoogleDriveFS(options.drive);
 	},
 } satisfies Backend<GoogleDriveFS, GoogleDriveOptions>;
