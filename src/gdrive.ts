@@ -55,14 +55,14 @@ export class GoogleDriveFS extends Async(FileSystem) {
 	}
 
 	private async getFileId(path: string): Promise<string> {
-		const normalizedPath = this.normalizePath(path);
-		const cachedId = this.pathCache.get(normalizedPath);
+		path = this.normalizePath(path);
+		const cachedId = this.pathCache.get(path);
 		if (cachedId) return cachedId;
 
 		try {
-			if (normalizedPath === '/') return 'root';
+			if (path === '/') return 'root';
 
-			const segments = normalizedPath.split('/').filter(Boolean);
+			const segments = path.split('/').filter(Boolean);
 			let parentId: string | undefined = 'root';
 			let fileId: string | undefined = 'root';
 			let currentPath = '';
@@ -99,6 +99,7 @@ export class GoogleDriveFS extends Async(FileSystem) {
 			throw convertError(error as DriveError, path, 'getFileId');
 		}
 	}
+
 	private decodePathComponent(component: string): string {
 		try {
 			return decodeURIComponent(component);
@@ -107,24 +108,12 @@ export class GoogleDriveFS extends Async(FileSystem) {
 		}
 	}
 
-	private encodePathComponent(component: string): string {
-		try {
-			return encodeURIComponent(component);
-		} catch {
-			return component;
-		}
-	}
-
 	private normalizePath(path: string): string {
 		// Split path, decode each component, and rejoin
-		return (
-			'/' +
-			path
-				.split('/')
-				.filter(Boolean)
-				.map(component => this.decodePathComponent(component))
-				.join('/')
-		);
+		return path
+			.split('/')
+			.map(component => this.decodePathComponent(component))
+			.join('/');
 	}
 
 	public async rename(oldPath: string, newPath: string): Promise<void> {
@@ -141,18 +130,18 @@ export class GoogleDriveFS extends Async(FileSystem) {
 
 	// Update other methods to use normalizePath
 	public async stat(path: string): Promise<Stats> {
-		const normalizedPath = this.normalizePath(path);
-		const cachedStats = this.statsCache.get(normalizedPath);
+		path = this.normalizePath(path);
+		const cachedStats = this.statsCache.get(path);
 		if (cachedStats) return cachedStats;
 
 		try {
-			if (normalizedPath === '/') {
+			if (path === '/') {
 				const rootStats = new Stats({ mode: 0o777 | S_IFDIR });
-				this.statsCache.set(normalizedPath, rootStats);
+				this.statsCache.set(path, rootStats);
 				return rootStats;
 			}
 
-			const fileId = await this.getFileId(normalizedPath);
+			const fileId = await this.getFileId(path);
 			const response = await this.gapi.client.drive.files.get({
 				fileId,
 				fields: 'mimeType, size, modifiedTime',
@@ -172,7 +161,7 @@ export class GoogleDriveFS extends Async(FileSystem) {
 				atimeMs: Date.now(),
 			});
 
-			this.statsCache.set(normalizedPath, stats);
+			this.statsCache.set(path, stats);
 			return stats;
 		} catch (error) {
 			throw convertError(error as DriveError, path, 'stat');
@@ -180,9 +169,9 @@ export class GoogleDriveFS extends Async(FileSystem) {
 	}
 
 	public async openFile(path: string, flag: string): Promise<File> {
-		const normalizedPath = this.normalizePath(path);
+		path = this.normalizePath(path);
 		try {
-			const fileId = await this.getFileId(normalizedPath);
+			const fileId = await this.getFileId(path);
 
 			// First get the file metadata to check its type
 			const metadata = await this.gapi.client.drive.files.get({ fileId, fields: 'mimeType, size' });
@@ -204,7 +193,7 @@ export class GoogleDriveFS extends Async(FileSystem) {
 			const stats = new Stats({ mode: S_IFREG | 0o666, size: content.length });
 
 			// Update stats cache with actual size
-			this.statsCache.set(normalizedPath, stats);
+			this.statsCache.set(path, stats);
 
 			return new PreloadFile(this, path, flag, stats, content);
 		} catch (error) {
