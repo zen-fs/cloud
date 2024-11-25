@@ -318,11 +318,7 @@ export const GoogleDrive = {
 	name: 'GoogleDrive',
 
 	options: {
-		drive: {
-			type: 'object',
-			required: true,
-			description: '',
-		},
+		drive: { type: 'object', required: true, description: '' },
 	},
 
 	isAvailable(): boolean {

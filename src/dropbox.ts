@@ -326,11 +326,7 @@ export const _Dropbox = {
 	name: 'Dropbox',
 
 	options: {
-		client: {
-			type: 'object',
-			required: true,
-			description: 'A v2 Dropbox client',
-		},
+		client: { type: 'object', required: true, description: 'A v2 Dropbox client' },
 	},
 
 	isAvailable(): boolean {
