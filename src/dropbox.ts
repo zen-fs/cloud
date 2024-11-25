@@ -296,7 +296,8 @@ export class DropboxFS extends Async(FileSystem) {
 	 * @internal
 	 * Syncs file to Dropbox.
 	 */
-	public async sync(path: string, data: Buffer): Promise<void> {
+	public async sync(path: string, data?: Uint8Array): Promise<void> {
+		if (!data) return;
 		await this.client
 			.filesUpload({
 				contents: new Blob([data], { type: 'octet/stream' }),

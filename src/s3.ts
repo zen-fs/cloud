@@ -211,7 +211,7 @@ export class S3FileSystem extends Async(FileSystem) {
 		throw ErrnoError.With('ENOSYS', link, 'link');
 	}
 
-	public async sync(path: string, data: Uint8Array, stats: Readonly<Stats>): Promise<void> {
+	public async sync(path: string, data?: Uint8Array, stats: Readonly<Partial<Stats>> = {}): Promise<void> {
 		const response = await this.client.putObject({
 			Bucket: this.bucketName,
 			Key: path,
