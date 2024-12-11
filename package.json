@@ -66,6 +66,8 @@
 	},
 	"optionalDependencies": {
 		"@aws-sdk/client-s3": "^3.679.0",
+		"@types/gapi": "^0.0.47",
+		"@types/gapi.client.drive-v3": "^0.0.5",
 		"dropbox": "^10.34.0"
 	}
 }

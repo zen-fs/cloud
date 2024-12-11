@@ -236,21 +236,9 @@ export interface S3Options {
 const _S3Bucket = {
 	name: 'S3',
 	options: {
-		bucketName: {
-			type: 'string',
-			required: true,
-			description: 'The name of the bucket you want to use',
-		},
-		client: {
-			type: 'object',
-			required: true,
-			description: 'Authenticated S3 client',
-		},
-		prefix: {
-			type: 'string',
-			required: false,
-			description: 'The prefix to use for all operations',
-		},
+		bucketName: { type: 'string', required: true, description: 'The name of the bucket you want to use' },
+		client: { type: 'object', required: true, description: 'Authenticated S3 client' },
+		prefix: { type: 'string', required: false, description: 'The prefix to use for all operations' },
 	},
 	isAvailable(): boolean {
 		return true;
