@@ -116,7 +116,7 @@ export class DropboxFS extends Async(FileSystem) {
 			}
 
 			await this.unlink(newPath);
-		} catch (_) {
+		} catch {
 			if (oldPath === newPath) {
 				throw ErrnoError.With('ENOENT', newPath, 'rename');
 			}
@@ -201,7 +201,7 @@ export class DropboxFS extends Async(FileSystem) {
 			path,
 			flag,
 			new Stats({
-				mode: 0o644 | S_IFREG,
+				mode: mode | S_IFREG,
 				size: result.size,
 				atimeMs: Date.now(),
 				mtimeMs: Date.parse(result.server_modified),
