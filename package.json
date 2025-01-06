@@ -17,9 +17,12 @@
 	"homepage": "https://github.com/zen-fs/cloud",
 	"author": "James Prevett <jp@jamespre.dev> (https://jamespre.dev)",
 	"contributors": [
-		"Marcos Candeia <marrcooos@gmail.com>",
-		"John Vilk <jvilk@cs.umass.edu> (http://people.cs.umass.edu/~jvilk)"
+		"Marcos Candeia <marrcooos@gmail.com>"
 	],
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
 	"license": "MIT",
 	"repository": {
 		"type": "git",
