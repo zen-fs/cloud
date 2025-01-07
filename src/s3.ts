@@ -1,7 +1,8 @@
 import type { S3 } from '@aws-sdk/client-s3';
-import { Async, type Backend, type File, FileSystem, InMemory, PreloadFile, Stats, type StatsLike, ErrnoError } from '@zenfs/core';
+import type { Backend, File, StatsLike } from '@zenfs/core';
+import { Async, ErrnoError, FileSystem, InMemory, PreloadFile, Stats } from '@zenfs/core';
 import { S_IFDIR, S_IFMT } from '@zenfs/core/emulation/constants.js';
-import { join } from '@zenfs/core/path';
+import { join } from '@zenfs/core/emulation/path.js';
 
 export type Metadata = Partial<Record<keyof StatsLike, string>>;
 

@@ -1,6 +1,7 @@
-import { Async, type Backend, encodeRaw, Errno, ErrnoError, type File, FileSystem, PreloadFile, Stats } from '@zenfs/core';
+import type { Backend, File } from '@zenfs/core';
+import { Async, encodeRaw, Errno, ErrnoError, FileSystem, PreloadFile, Stats } from '@zenfs/core';
 import { S_IFDIR, S_IFREG } from '@zenfs/core/emulation/constants.js';
-import { dirname, join } from '@zenfs/core/path';
+import { dirname, join } from '@zenfs/core/emulation/path.js';
 
 import 'gapi';
 import 'gapi.client.drive-v3';

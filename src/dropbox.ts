@@ -1,6 +1,7 @@
-import { Async, Errno, ErrnoError, FileSystem, PreloadFile, Stats, type Backend, type File } from '@zenfs/core';
+import type { Backend, File } from '@zenfs/core';
+import { Async, Errno, ErrnoError, FileSystem, PreloadFile, Stats } from '@zenfs/core';
 import { S_IFDIR, S_IFLNK, S_IFREG } from '@zenfs/core/emulation/constants.js';
-import { dirname } from '@zenfs/core/path';
+import { dirname } from '@zenfs/core/emulation/path.js';
 import { Buffer } from 'buffer';
 import type * as DB from 'dropbox';
 
