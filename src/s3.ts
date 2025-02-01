@@ -1,45 +1,54 @@
 import type { S3 } from '@aws-sdk/client-s3';
-import type { Backend, File, StatsLike } from '@zenfs/core';
-import { Async, ErrnoError, FileSystem, InMemory, PreloadFile, Stats } from '@zenfs/core';
-import { S_IFDIR, S_IFMT } from '@zenfs/core/emulation/constants.js';
-import { join } from '@zenfs/core/emulation/path.js';
+import type { ResponseMetadata } from '@aws-sdk/types';
+import type { Backend, FileSystem, InodeLike } from '@zenfs/core';
+import { _inode_fields, Errno, ErrnoError, InMemory, log, normalizePath, Stats } from '@zenfs/core';
+import { join } from '@zenfs/core/vfs/path.js';
+import { CloudFS, type CloudFSOptions } from './cloudfs.js';
 
-export type Metadata = Partial<Record<keyof StatsLike, string>>;
+export type Metadata = Partial<Record<keyof InodeLike, string>>;
 
-const keys = ['size', 'atimeMs', 'mtimeMs', 'ctimeMs', 'birthtimeMs', 'mode', 'ino', 'uid', 'gid'] as const;
-
-function stringifyStats(stats: Partial<StatsLike>): Partial<Metadata> {
+function stringifyStats(stats: Partial<InodeLike>): Partial<Metadata> {
 	const data: Partial<Metadata> = {};
-	for (const prop of keys) {
-		if (prop in stats) {
-			data[prop] = stats[prop]?.toString();
-		}
+	for (const prop of _inode_fields) {
+		if (prop in stats) data[prop] = stats[prop]?.toString();
 	}
 	return data;
 }
 
 function parseStats(metadata: Metadata): Stats {
-	const data: Partial<StatsLike> = {};
-	for (const prop of keys) {
-		if (prop in metadata) {
-			data[prop] = +metadata[prop]!;
-		}
+	const data: Partial<InodeLike> = {};
+	for (const prop of _inode_fields) {
+		if (prop in metadata) data[prop] = +metadata[prop]!;
 	}
 	return new Stats(data);
 }
 
-export class S3FileSystem extends Async(FileSystem) {
+/**
+ * @internal @hidden
+ */
+type _S3Error = Error & { name?: string };
+
+function convertError(error: _S3Error, path: string, syscall: string): never {
+	throw new ErrnoError(Errno.EREMOTEIO, error.message, path, syscall);
+}
+
+function checkStatus(metadata: ResponseMetadata, path: string, syscall: string, ...expected: number[]) {
+	if (expected.some(code => code == metadata.httpStatusCode)) return;
+}
+
+export class S3FileSystem extends CloudFS<_S3Error> {
 	protected prefix: string;
+
+	declare _sync?: FileSystem;
 
 	public constructor(
 		protected client: S3,
 		protected bucketName: string,
-		prefix: string = ''
+		prefix: string = '',
+		cacheTTL?: number
 	) {
-		super();
-		prefix = prefix.startsWith('/') ? prefix.slice(1) : prefix;
-		this.prefix = prefix.endsWith('/') ? prefix : prefix + '/';
-
+		super(0x61777333, 'nfs-s3', cacheTTL, convertError);
+		this.prefix = normalizePath('/' + prefix + '/').slice(1);
 		this._sync = InMemory.create({ name: 's3:' + bucketName });
 	}
 
@@ -54,67 +63,20 @@ export class S3FileSystem extends Async(FileSystem) {
 	/**
 	 * @todo Handle prefix
 	 */
-	public async stat(path: string): Promise<Stats> {
-		// Special case for the root path, assume it always exists
-		if (path === '/') {
-			return new Stats({ mode: S_IFDIR | 0o755 });
-		}
-
-		const response = await this.client.headObject({ Bucket: this.bucketName, Key: path }).catch((error: Error & { name?: string }) => {
-			if (error.name == 'NotFound') {
-				return;
-			}
-			throw error;
-		});
-
-		if (!response) {
-			throw ErrnoError.With('ENOENT', path, 'stat');
-		}
-
-		const metadata = response.Metadata as Metadata | undefined;
-
-		if (!metadata) {
-			throw ErrnoError.With('ENODATA', path, 'stat');
-		}
-
-		const stats = parseStats(metadata);
-
-		if (stats.size != response.ContentLength) {
-			throw ErrnoError.With('EBADMSG', path, 'stat');
-		}
-
-		if (stats.mtime != response.LastModified) {
-			throw ErrnoError.With('EBADMSG', path, 'stat');
-		}
-
-		return stats;
-	}
-
-	public async mkdir(path: string, mode: number): Promise<void> {
-		// Skip if trying to create the root directory, as it should always exist
-		if (path === '/') {
-			return;
-		}
-
-		const now = Date.now();
-
-		const response = await this.client.putObject({
+	public async _stat(path: string): Promise<Stats> {
+		const { Metadata, ContentLength, LastModified } = await this.client.headObject({
 			Bucket: this.bucketName,
 			Key: path,
-			Body: '',
-			ContentLength: 0,
-			Metadata: stringifyStats({
-				mode: (mode & ~S_IFMT) | S_IFDIR,
-				ctimeMs: now,
-				atimeMs: now,
-				mtimeMs: now,
-				birthtimeMs: now,
-			}),
 		});
 
-		if (response.$metadata.httpStatusCode !== 200) {
-			throw ErrnoError.With('EIO', path, 'mkdir');
-		}
+		if (!Metadata) throw ErrnoError.With('ENODATA', path, 'stat');
+
+		const stats = parseStats(Metadata as Metadata);
+
+		if (stats.size != ContentLength) log.warn('Mismatch between stats size and content length: ' + path);
+		if (stats.mtime != LastModified) throw ErrnoError.With('EBADMSG', path, 'stat');
+
+		return stats;
 	}
 
 	public async readdir(path: string): Promise<string[]> {
@@ -129,91 +91,66 @@ export class S3FileSystem extends Async(FileSystem) {
 			return [];
 		}
 
-		const directories = response.CommonPrefixes?.map(prefix => prefix.Prefix!.replace(path, '').replace(/\/$/, '')) || [];
-		const files = response.Contents?.filter(content => content.Key != path).map(content => content.Key!.replace(path, '')) || [];
+		const directories =
+			response.CommonPrefixes?.map(prefix => prefix.Prefix!.replace(path, '').replace(/\/$/, '')) || [];
+		const files =
+			response.Contents?.filter(content => content.Key != path).map(content => content.Key!.replace(path, '')) ||
+			[];
 
 		return [...directories, ...files].filter(name => name.length);
 	}
 
-	public async rmdir(path: string): Promise<void> {
-		if (path == '/') {
-			throw ErrnoError.With('EPERM', path, 'rmdir');
-		}
-		const contents = await this.readdir(path);
-		if (contents.length > 0) {
-			throw ErrnoError.With('ENOTEMPTY', path, 'rmdir');
-		}
+	protected async _delete(path: string, isDirectory: boolean): Promise<void> {
+		const syscall = isDirectory ? 'rmdir' : 'unlink';
+		if (path == '/') throw ErrnoError.With('EPERM', path, syscall);
 
-		await this.client.deleteObject({
-			Bucket: this.bucketName,
-			Key: path,
-		});
+		const { $metadata: $md } = await this.client.deleteObject({ Bucket: this.bucketName, Key: path });
+
+		checkStatus($md, path, syscall, 204);
 	}
 
-	public async unlink(path: string): Promise<void> {
-		const response = await this.client.deleteObject({
+	public async _move(from: string, to: string): Promise<void> {
+		const { $metadata: $md } = await this.client.copyObject({
 			Bucket: this.bucketName,
-			Key: path,
+			CopySource: join(this.bucketName, from),
+			Key: to,
 		});
 
-		if (response.$metadata.httpStatusCode !== 204) {
-			throw ErrnoError.With('ENOENT', path, 'unlink');
-		}
+		checkStatus($md, to, 'rename', 200);
+
+		await this.unlink(from);
 	}
 
-	public async rename(oldPath: string, newPath: string): Promise<void> {
-		const response = await this.client.copyObject({
-			Bucket: this.bucketName,
-			CopySource: join(this.bucketName, oldPath),
-			Key: newPath,
-		});
-		if (response.$metadata.httpStatusCode !== 200) {
-			throw ErrnoError.With('EIO', newPath, 'rename');
-		}
+	protected async _create(path: string, stats: Stats): Promise<void> {
+		const syscall = stats.isDirectory() ? 'mkdir' : 'createFile';
+		// The root directory should always exist
+		if (path === '/') throw ErrnoError.With('EEXIST', '/', syscall);
 
-		await this.unlink(oldPath);
-	}
-
-	public async createFile(path: string, flag: string): Promise<File> {
-		const response = await this.client.putObject({
+		const { $metadata: $md } = await this.client.putObject({
 			Bucket: this.bucketName,
 			Key: path,
 			Body: new Uint8Array(),
+			ContentLength: 0,
+			Metadata: stringifyStats(stats),
 		});
-		if (response.$metadata.httpStatusCode != 200) {
-			throw ErrnoError.With('EIO', path, 'createFile');
-		}
 
-		return this.openFile(path, flag);
+		checkStatus($md, path, syscall, 200, 201);
 	}
 
-	public async openFile(path: string, flag: string): Promise<File> {
-		const response = await this.client.getObject({
-			Bucket: this.bucketName,
-			Key: path,
-		});
-		if (response.$metadata.httpStatusCode != 200) {
-			throw ErrnoError.With('ENOENT', path, 'openFile');
-		}
+	protected async _read(path: string, syscall: string): Promise<Uint8Array> {
+		const { $metadata: $md, Body } = await this.client.getObject({ Bucket: this.bucketName, Key: path });
 
-		const data = await response.Body?.transformToByteArray();
+		checkStatus($md, path, syscall, 200);
 
-		if (!data) {
-			throw ErrnoError.With('ENODATA', path, 'openFile');
-		}
+		const data = await Body?.transformToByteArray();
 
-		const stats = await this.stat(path);
-		stats.size = data.byteLength;
+		if (!data) throw ErrnoError.With('ENODATA', path, 'openFile');
 
-		return new PreloadFile(this, path, flag, stats, data);
+		return data;
 	}
 
-	public link(_target: string, link: string): Promise<void> {
-		throw ErrnoError.With('ENOSYS', link, 'link');
-	}
-
-	public async sync(path: string, data: Uint8Array, stats: Readonly<Stats>): Promise<void> {
-		const response = await this.client.putObject({
+	protected async _write(path: string, data: Uint8Array, stats: Partial<InodeLike>, syscall: string): Promise<void> {
+		const { $metadata: $md } = await this.client.putObject({
 			Bucket: this.bucketName,
 			Key: path,
 			Body: data,
@@ -222,13 +159,11 @@ export class S3FileSystem extends Async(FileSystem) {
 			Metadata: stringifyStats(stats),
 		});
 
-		if (response.$metadata.httpStatusCode !== 200) {
-			throw ErrnoError.With('EIO', path, 'sync');
-		}
+		checkStatus($md, path, syscall, 200);
 	}
 }
 
-export interface S3Options {
+export interface S3Options extends CloudFSOptions {
 	bucketName: string;
 	client: S3;
 	prefix?: string;
@@ -240,12 +175,13 @@ const _S3Bucket = {
 		bucketName: { type: 'string', required: true, description: 'The name of the bucket you want to use' },
 		client: { type: 'object', required: true, description: 'Authenticated S3 client' },
 		prefix: { type: 'string', required: false, description: 'The prefix to use for all operations' },
+		cacheTTL: { type: 'number', required: false },
 	},
 	isAvailable(): boolean {
 		return true;
 	},
-	create({ client, bucketName, prefix }: S3Options): S3FileSystem {
-		return new S3FileSystem(client, bucketName, prefix);
+	create(opt: S3Options): S3FileSystem {
+		return new S3FileSystem(opt.client, opt.bucketName, opt.prefix, opt.cacheTTL);
 	},
 } as const satisfies Backend<S3FileSystem, S3Options>;
 type _S3Bucket = typeof _S3Bucket;

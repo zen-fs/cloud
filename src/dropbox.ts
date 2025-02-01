@@ -1,9 +1,8 @@
-import type { Backend, File } from '@zenfs/core';
-import { Async, Errno, ErrnoError, FileSystem, PreloadFile, Stats } from '@zenfs/core';
+import type { Backend, InodeLike } from '@zenfs/core';
+import { Errno, ErrnoError, Stats } from '@zenfs/core';
 import { S_IFDIR, S_IFLNK, S_IFREG } from '@zenfs/core/emulation/constants.js';
-import { dirname } from '@zenfs/core/emulation/path.js';
-import { Buffer } from 'buffer';
 import type * as DB from 'dropbox';
+import { CloudFS, type CloudFSOptions } from './cloudfs.js';
 
 /**
  * Dropbox paths do not begin with a /,
@@ -39,8 +38,12 @@ function convertError(error: DBReject, path: string, syscall: string, message?: 
 	}
 
 	if (!('.tag' in error)) {
-		// eslint-disable-next-line @typescript-eslint/no-base-to-string
-		return convertError(error.error, path, syscall, error.user_message?.text || error.error_summary || error.error.toString());
+		return convertError(
+			error.error,
+			path,
+			syscall,
+			error.user_message?.text || error.error_summary || error.error.toString()
+		);
 	}
 	switch (error['.tag']) {
 		case 'path':
@@ -102,50 +105,20 @@ function convertError(error: DBReject, path: string, syscall: string, message?: 
 	}
 }
 
-export class DropboxFS extends Async(FileSystem) {
-	public constructor(public readonly client: DB.Dropbox) {
-		super();
+export class DropboxFS extends CloudFS<DBReject> {
+	public constructor(
+		public readonly client: DB.Dropbox,
+		cacheTTL?: number
+	) {
+		super(0x64726f70, 'nfs-dropbox', cacheTTL, convertError);
 	}
 
-	public async rename(oldPath: string, newPath: string): Promise<void> {
-		// Since you can't rename over things with Dropbox, the destination is deleted if it exists
-		try {
-			const stats = await this.stat(newPath);
-
-			if (stats.isDirectory()) {
-				throw ErrnoError.With('EISDIR', newPath, 'rename');
-			}
-
-			await this.unlink(newPath);
-		} catch {
-			if (oldPath === newPath) {
-				throw ErrnoError.With('ENOENT', newPath, 'rename');
-			}
-		}
-
-		await this.client
-			.filesMoveV2({
-				from_path: fixPath(oldPath),
-				to_path: fixPath(newPath),
-			})
-			.catch((error: DBReject) => {
-				throw convertError(error, oldPath, 'rename');
-			});
+	public async _move(from: string, to: string): Promise<void> {
+		await this.client.filesMoveV2({ from_path: fixPath(from), to_path: fixPath(to) });
 	}
 
-	public async stat(path: string): Promise<Stats> {
-		if (path === '/') {
-			// Dropbox doesn't support stating the root directory.
-			return new Stats({ mode: 0o666 | S_IFDIR });
-		}
-
-		const { result } = await this.client
-			.filesGetMetadata({
-				path: fixPath(path),
-			})
-			.catch((error: DBReject) => {
-				throw convertError(error, path, 'stat');
-			});
+	public async _stat(path: string): Promise<Stats> {
+		const { result } = await this.client.filesGetMetadata({ path: fixPath(path) });
 
 		switch (result['.tag']) {
 			case 'file':
@@ -164,95 +137,19 @@ export class DropboxFS extends Async(FileSystem) {
 		}
 	}
 
-	public async openFile(path: string, flag: string): Promise<File> {
-		const { result } = await this.client
-			.filesDownload({
+	protected async _create(path: string, stats: Stats): Promise<void> {
+		if (stats.isDirectory()) {
+			await this.client.filesCreateFolderV2({ path: fixPath(path) });
+		} else {
+			await this.client.filesUpload({
+				contents: new Blob([new Uint8Array()], { type: 'octet/stream' }),
 				path: fixPath(path),
-			})
-			.catch((error: DBReject) => {
-				throw convertError(error, path, 'openFile');
 			});
-		return new PreloadFile(
-			this,
-			path,
-			flag,
-			new Stats({
-				mode: result.symlink_info ? S_IFLNK : S_IFREG,
-				size: result.symlink_info?.target?.length || result.size,
-				atimeMs: Date.now(),
-				mtimeMs: Date.parse(result.server_modified),
-			}),
-			(result as DB.files.FileMetadata & { fileBinary: Uint8Array }).fileBinary
-		);
-	}
-
-	public async createFile(path: string, flag: string, mode: number): Promise<File> {
-		const data = Buffer.alloc(0);
-
-		const { result } = await this.client
-			.filesUpload({
-				contents: new Blob([data], { type: 'octet/stream' }),
-				path: fixPath(path),
-			})
-			.catch((error: DBReject) => {
-				throw convertError(error, path, 'createFile');
-			});
-		return new PreloadFile(
-			this,
-			path,
-			flag,
-			new Stats({
-				mode: mode | S_IFREG,
-				size: result.size,
-				atimeMs: Date.now(),
-				mtimeMs: Date.parse(result.server_modified),
-			}),
-			data
-		);
-	}
-
-	public async unlink(path: string): Promise<void> {
-		if ((await this.stat(path)).isDirectory()) {
-			throw ErrnoError.With('EISDIR', path, 'unlink');
 		}
-		await this.client
-			.filesDeleteV2({
-				path: fixPath(path),
-			})
-			.catch((error: DBReject) => {
-				throw convertError(error, path, 'unlink');
-			});
 	}
 
-	public async rmdir(path: string): Promise<void> {
-		const paths = await this.readdir(path);
-		if (paths.length > 0) {
-			throw ErrnoError.With('ENOTEMPTY', path, 'rmdir');
-		}
-		await this.client
-			.filesDeleteV2({
-				path: fixPath(path),
-			})
-			.catch((error: DBReject) => {
-				throw convertError(error, path, 'rmdir');
-			});
-	}
-
-	public async mkdir(path: string): Promise<void> {
-		// Dropbox's folder creations is recursive, so we check to make sure the parent exists
-		const parent = dirname(path);
-		const stats = await this.stat(parent);
-		if (stats && !stats.isDirectory()) {
-			throw ErrnoError.With('ENOTDIR', parent, 'mkdir');
-		}
-
-		await this.client
-			.filesCreateFolderV2({
-				path: fixPath(path),
-			})
-			.catch((error: DBReject) => {
-				throw convertError(error, path, 'rmdir');
-			});
+	protected async _delete(path: string): Promise<void> {
+		await this.client.filesDeleteV2({ path: fixPath(path) });
 	}
 
 	public async readdir(path: string): Promise<string[]> {
@@ -260,13 +157,7 @@ export class DropboxFS extends Async(FileSystem) {
 			return entries.map(e => e.path_display).filter((p): p is string => !!p);
 		};
 
-		let { result } = await this.client
-			.filesListFolder({
-				path: fixPath(path),
-			})
-			.catch((error: DBReject) => {
-				throw convertError(error, path, 'readdir');
-			});
+		let { result } = await this.client.filesListFolder({ path: fixPath(path) });
 
 		const entries = names(result);
 
@@ -278,13 +169,7 @@ export class DropboxFS extends Async(FileSystem) {
 				throw new ErrnoError(Errno.EIO, 'Infinite loop prevented', path, 'readdir');
 			}
 
-			const response = await this.client
-				.filesListFolderContinue({
-					cursor: result.cursor,
-				})
-				.catch((error: DBReject) => {
-					throw convertError(error, path, 'readdir');
-				});
+			const response = await this.client.filesListFolderContinue({ cursor: result.cursor });
 
 			result = response.result;
 			entries.push(...names(result));
@@ -293,30 +178,23 @@ export class DropboxFS extends Async(FileSystem) {
 		return entries;
 	}
 
-	/**
-	 * @internal
-	 * Syncs file to Dropbox.
-	 */
-	public async sync(path: string, data: Buffer): Promise<void> {
-		await this.client
-			.filesUpload({
-				contents: new Blob([data], { type: 'octet/stream' }),
-				path: fixPath(path),
-				mode: {
-					'.tag': 'overwrite',
-				},
-			})
-			.catch((error: DBReject) => {
-				throw convertError(error, path, 'rmdir');
-			});
+	protected async _read(path: string): Promise<Uint8Array> {
+		const { result } = await this.client.filesDownload({ path: fixPath(path) });
+
+		const { fileBinary } = result as DB.files.FileMetadata & { fileBinary: Uint8Array };
+		return fileBinary;
 	}
 
-	public link(target: string): Promise<void> {
-		throw ErrnoError.With('ENOTSUP', target, 'link');
+	protected async _write(path: string, buffer: Uint8Array, stats: Partial<InodeLike>): Promise<void> {
+		await this.client.filesUpload({
+			contents: new Blob([buffer], { type: 'octet/stream' }),
+			path: fixPath(path),
+			mode: { '.tag': 'overwrite' },
+		});
 	}
 }
 
-export interface DropboxOptions {
+export interface DropboxOptions extends CloudFSOptions {
 	/**
 	 * A v2 Dropbox client
 	 */
@@ -327,7 +205,8 @@ export const _Dropbox = {
 	name: 'Dropbox',
 
 	options: {
-		client: { type: 'object', required: true, description: 'A v2 Dropbox client' },
+		client: { type: 'object', required: true },
+		cacheTTL: { type: 'number', required: false },
 	},
 
 	isAvailable(): boolean {
@@ -335,7 +214,7 @@ export const _Dropbox = {
 	},
 
 	create(options) {
-		return new DropboxFS(options.client);
+		return new DropboxFS(options.client, options.cacheTTL);
 	},
 } satisfies Backend<DropboxFS, DropboxOptions>;
 type _Dropbox = typeof _Dropbox;
