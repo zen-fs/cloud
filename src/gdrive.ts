@@ -2,8 +2,6 @@ import type { Backend, InodeLike } from '@zenfs/core';
 import { encodeRaw, Errno, ErrnoError, Stats } from '@zenfs/core';
 import { S_IFDIR, S_IFREG } from '@zenfs/core/emulation/constants.js';
 import { basename, dirname, join } from '@zenfs/core/emulation/path.js';
-import 'gapi';
-import 'gapi.client.drive-v3';
 import { CloudFS, type CloudFSOptions } from './cloudfs.js';
 
 type DriveError = Error & { code?: number };
