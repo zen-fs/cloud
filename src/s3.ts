@@ -1,8 +1,9 @@
 import type { S3 } from '@aws-sdk/client-s3';
 import type { ResponseMetadata } from '@aws-sdk/types';
 import type { Backend, FileSystem, InodeLike } from '@zenfs/core';
-import { _inode_fields, Errno, ErrnoError, InMemory, log, normalizePath, Stats } from '@zenfs/core';
-import { join } from '@zenfs/core/vfs/path.js';
+import { _inode_fields, Errno, ErrnoError, InMemory, Inode, log, normalizePath } from '@zenfs/core';
+import { join } from '@zenfs/core/path.js';
+import { S_IFDIR } from '@zenfs/core/vfs/constants.js';
 import { CloudFS, type CloudFSOptions } from './cloudfs.js';
 
 export type Metadata = Partial<Record<keyof InodeLike, string>>;
@@ -15,12 +16,12 @@ function stringifyStats(stats: Partial<InodeLike>): Partial<Metadata> {
 	return data;
 }
 
-function parseStats(metadata: Metadata): Stats {
+function parseStats(metadata: Metadata): Inode {
 	const data: Partial<InodeLike> = {};
 	for (const prop of _inode_fields) {
 		if (prop in metadata) data[prop] = +metadata[prop]!;
 	}
-	return new Stats(data);
+	return new Inode(data);
 }
 
 /**
@@ -49,21 +50,21 @@ export class S3FileSystem extends CloudFS<_S3Error> {
 	) {
 		super(0x61777333, 'nfs-s3', cacheTTL, convertError);
 		this.prefix = normalizePath('/' + prefix + '/').slice(1);
-		this._sync = InMemory.create({ name: 's3:' + bucketName });
+		this._sync = InMemory.create({ label: 's3:' + bucketName });
 	}
 
 	public async ready() {
 		await super.ready();
 		await this.stat('/').catch(async (error: ErrnoError) => {
 			if (error.code != 'ENOENT') return;
-			await this.mkdir('/', 0o777);
+			await this.mkdir('/', { mode: 0o777, uid: 0, gid: 0 });
 		});
 	}
 
 	/**
 	 * @todo Handle prefix
 	 */
-	public async _stat(path: string): Promise<Stats> {
+	public async _stat(path: string): Promise<Inode> {
 		const { Metadata, ContentLength, LastModified } = await this.client.headObject({
 			Bucket: this.bucketName,
 			Key: path,
@@ -71,12 +72,12 @@ export class S3FileSystem extends CloudFS<_S3Error> {
 
 		if (!Metadata) throw ErrnoError.With('ENODATA', path, 'stat');
 
-		const stats = parseStats(Metadata as Metadata);
+		const inode = parseStats(Metadata as Metadata);
 
-		if (stats.size != ContentLength) log.warn('Mismatch between stats size and content length: ' + path);
-		if (stats.mtime != LastModified) throw ErrnoError.With('EBADMSG', path, 'stat');
+		if (inode.size != ContentLength) log.warn('Mismatch between stats size and content length: ' + path);
+		if (inode.mtimeMs != LastModified?.getTime()) throw ErrnoError.With('EBADMSG', path, 'stat');
 
-		return stats;
+		return inode;
 	}
 
 	public async readdir(path: string): Promise<string[]> {
@@ -121,8 +122,8 @@ export class S3FileSystem extends CloudFS<_S3Error> {
 		await this.unlink(from);
 	}
 
-	protected async _create(path: string, stats: Stats): Promise<void> {
-		const syscall = stats.isDirectory() ? 'mkdir' : 'createFile';
+	protected async _create(path: string, inode: Inode): Promise<void> {
+		const syscall = inode.mode & S_IFDIR ? 'mkdir' : 'createFile';
 		// The root directory should always exist
 		if (path === '/') throw ErrnoError.With('EEXIST', '/', syscall);
 
@@ -131,7 +132,7 @@ export class S3FileSystem extends CloudFS<_S3Error> {
 			Key: path,
 			Body: new Uint8Array(),
 			ContentLength: 0,
-			Metadata: stringifyStats(stats),
+			Metadata: stringifyStats(inode),
 		});
 
 		checkStatus($md, path, syscall, 200, 201);
@@ -149,14 +150,30 @@ export class S3FileSystem extends CloudFS<_S3Error> {
 		return data;
 	}
 
-	protected async _write(path: string, data: Uint8Array, stats: Partial<InodeLike>, syscall: string): Promise<void> {
+	protected async _touch(path: string, inode: Partial<InodeLike>): Promise<void> {
+		const data = await this._read(path, 'touch');
+
+		const { $metadata: $md } = await this.client.putObject({
+			Bucket: this.bucketName,
+			Key: path,
+			Body: data,
+			ContentLength: data.byteLength,
+			Metadata: stringifyStats(inode),
+		});
+
+		checkStatus($md, path, 'touch', 200);
+	}
+
+	protected async _write(path: string, data: Uint8Array, syscall: string): Promise<void> {
+		const inode = await this.stat(path);
+
 		const { $metadata: $md } = await this.client.putObject({
 			Bucket: this.bucketName,
 			Key: path,
 			Body: data,
 			ContentLength: data.byteLength,
 			ContentType: 'application/octet-stream',
-			Metadata: stringifyStats(stats),
+			Metadata: stringifyStats(inode),
 		});
 
 		checkStatus($md, path, syscall, 200);
@@ -172,9 +189,9 @@ export interface S3Options extends CloudFSOptions {
 const _S3Bucket = {
 	name: 'S3',
 	options: {
-		bucketName: { type: 'string', required: true, description: 'The name of the bucket you want to use' },
-		client: { type: 'object', required: true, description: 'Authenticated S3 client' },
-		prefix: { type: 'string', required: false, description: 'The prefix to use for all operations' },
+		bucketName: { type: 'string', required: true },
+		client: { type: 'object', required: true },
+		prefix: { type: 'string', required: false },
 		cacheTTL: { type: 'number', required: false },
 	},
 	isAvailable(): boolean {

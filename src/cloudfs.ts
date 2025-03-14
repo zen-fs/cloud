@@ -1,7 +1,7 @@
-import type { File, InodeLike } from '@zenfs/core';
-import { Async, ErrnoError, FileSystem, LazyFile, PreloadFile, Stats } from '@zenfs/core';
+import type { CreationOptions, InodeLike } from '@zenfs/core';
+import { Async, ErrnoError, FileSystem, Inode } from '@zenfs/core';
+import { dirname } from '@zenfs/core/path.js';
 import { S_IFDIR, S_IFREG } from '@zenfs/core/vfs/constants.js';
-import { dirname } from '@zenfs/core/vfs/path.js';
 import { extendBuffer } from 'utilium/buffer.js';
 
 interface CacheEntry {
@@ -43,34 +43,28 @@ export abstract class CloudFS<TError> extends Async(FileSystem) {
 		await this._move(oldPath, newPath).catch(this._convertAndThrow(oldPath, 'rename'));
 	}
 
-	protected abstract _stat(path: string): Promise<Stats>;
+	protected abstract _stat(path: string): Promise<InodeLike>;
 
-	public async stat(path: string): Promise<Stats> {
-		if (path === '/') return new Stats({ mode: S_IFDIR | 0o755 });
+	public async stat(path: string): Promise<InodeLike> {
+		if (path === '/') return new Inode({ mode: S_IFDIR | 0o755 });
 
 		return await this._stat(path).catch(this._convertAndThrow(path, 'stat'));
 	}
 
-	public async openFile(path: string, flag: string): Promise<File> {
-		const stats = await this.stat(path).catch(this._convertAndThrow(path, 'openFile'));
-		return new LazyFile(this, path, flag, stats);
-	}
+	protected abstract _create(path: string, inode: Inode): Promise<void>;
 
-	protected abstract _create(path: string, stats: Stats): Promise<void>;
+	public async createFile(path: string, options: CreationOptions): Promise<Inode> {
+		const inode = new Inode({ mode: options.mode | S_IFREG });
 
-	public async createFile(path: string, flag: string, mode: number): Promise<File> {
-		const stats = new Stats({ mode: mode | S_IFREG });
-
-		await this._create(path, stats).catch(this._convertAndThrow(path, 'createFile'));
-
-		return new PreloadFile(this, path, flag, stats, new Uint8Array());
+		await this._create(path, inode).catch(this._convertAndThrow(path, 'createFile'));
+		return inode;
 	}
 
 	protected abstract _delete(path: string, isDirectory: boolean): Promise<void>;
 
 	public async unlink(path: string): Promise<void> {
-		const stats = await this.stat(path).catch(this._convertAndThrow(path, 'unlink'));
-		if (stats.isDirectory()) throw ErrnoError.With('EISDIR', path, 'unlink');
+		const inode = await this.stat(path).catch(this._convertAndThrow(path, 'unlink'));
+		if (inode.mode & S_IFDIR) throw ErrnoError.With('EISDIR', path, 'unlink');
 		await this._delete(path, false).catch(this._convertAndThrow(path, 'unlink'));
 	}
 
@@ -80,18 +74,25 @@ export abstract class CloudFS<TError> extends Async(FileSystem) {
 		await this._delete(path, true).catch(this._convertAndThrow(path, 'rmdir'));
 	}
 
-	public async mkdir(path: string, mode: number): Promise<void> {
+	public async mkdir(path: string, options: CreationOptions): Promise<Inode> {
 		// Dropbox's folder creations is recursive, so we check to make sure the parent exists
 		const parent = dirname(path);
-		const stats = await this.stat(parent).catch(this._convertAndThrow(path, 'mkdir'));
-		if (stats && !stats.isDirectory()) throw ErrnoError.With('ENOTDIR', parent, 'mkdir');
+		const parentInode = await this.stat(parent).catch(this._convertAndThrow(path, 'mkdir'));
+		if (parentInode && !(parentInode.mode & S_IFDIR)) throw ErrnoError.With('ENOTDIR', parent, 'mkdir');
 
-		await this._create(path, new Stats({ mode: mode | S_IFDIR })).catch(this._convertAndThrow(path, 'mkdir'));
+		await this._create(path, new Inode({ mode: options.mode | S_IFDIR })).catch(
+			this._convertAndThrow(path, 'mkdir')
+		);
+		return new Inode({ mode: options.mode | S_IFDIR });
 	}
 
-	public async sync(path: string, data: Uint8Array, stats: Partial<InodeLike> = {}): Promise<void> {
-		await this._write(path, data, stats, 'sync').catch(this._convertAndThrow(path, 'sync'));
+	protected _touch?(path: string, inode: Partial<InodeLike>): Promise<void>;
+
+	public async touch(path: string, metadata: Partial<InodeLike> = {}): Promise<void> {
+		await this._touch?.(path, metadata).catch(this._convertAndThrow(path, 'touch'));
 	}
+
+	public async sync(): Promise<void> {}
 
 	public link(target: string): Promise<void> {
 		throw ErrnoError.With('ENOTSUP', target, 'link');
@@ -104,17 +105,12 @@ export abstract class CloudFS<TError> extends Async(FileSystem) {
 		buffer.set(data.subarray(offset, end));
 	}
 
-	protected abstract _write(
-		path: string,
-		buffer: Uint8Array,
-		stats: Partial<InodeLike>,
-		syscall: string
-	): Promise<void>;
+	protected abstract _write(path: string, buffer: Uint8Array, syscall: string): Promise<void>;
 
 	public async write(path: string, data: Uint8Array, offset: number = 0): Promise<void> {
 		const buffer = extendBuffer(await this.getValidContents(path, 'write'), offset + data.byteLength);
 		buffer.set(data, offset);
-		await this._write(path, buffer, {}, 'write').catch(this._convertAndThrow(path, 'write'));
+		await this._write(path, buffer, 'write').catch(this._convertAndThrow(path, 'write'));
 	}
 
 	protected partialCache = new Map<string, CacheEntry>();

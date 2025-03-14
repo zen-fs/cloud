@@ -1,7 +1,8 @@
-import type { Backend, InodeLike } from '@zenfs/core';
-import { encodeRaw, Errno, ErrnoError, Stats } from '@zenfs/core';
-import { S_IFDIR, S_IFREG } from '@zenfs/core/emulation/constants.js';
-import { basename, dirname, join } from '@zenfs/core/emulation/path.js';
+import type { Backend } from '@zenfs/core';
+import { Errno, ErrnoError, Inode } from '@zenfs/core';
+import { basename, dirname, join } from '@zenfs/core/path.js';
+import { S_IFDIR, S_IFREG } from '@zenfs/core/vfs/constants.js';
+import { encodeASCII } from 'utilium';
 import { CloudFS, type CloudFSOptions } from './cloudfs.js';
 
 type DriveError = Error & { code?: number };
@@ -27,7 +28,7 @@ function convertError(error: DriveError, path: string, syscall: string): ErrnoEr
 
 export class GoogleDriveFS extends CloudFS<DriveError> {
 	private pathCache: Map<string, string> = new Map();
-	private statsCache: Map<string, Stats> = new Map();
+	private nodeCache: Map<string, Inode> = new Map();
 	private dirCache: Map<string, string[]> = new Map();
 
 	public constructor(
@@ -43,7 +44,7 @@ export class GoogleDriveFS extends CloudFS<DriveError> {
 
 	private clearCaches(path: string) {
 		this.pathCache.delete(path);
-		this.statsCache.delete(path);
+		this.nodeCache.delete(path);
 		this.dirCache.delete(dirname(path));
 	}
 
@@ -94,8 +95,8 @@ export class GoogleDriveFS extends CloudFS<DriveError> {
 	}
 
 	// Update other methods to use normalizePath
-	protected async _stat(path: string): Promise<Stats> {
-		const cachedStats = this.statsCache.get(path);
+	protected async _stat(path: string): Promise<Inode> {
+		const cachedStats = this.nodeCache.get(path);
 		if (cachedStats) return cachedStats;
 
 		const { result } = await this.drive.files.get({
@@ -105,32 +106,33 @@ export class GoogleDriveFS extends CloudFS<DriveError> {
 
 		const isDirectory = result.mimeType === 'application/vnd.google-apps.folder';
 
-		const stats = new Stats({
+		const inode = new Inode({
 			mode: isDirectory ? S_IFDIR | 0o777 : S_IFREG | 0o666,
 			size: parseInt(result.size!),
 			mtimeMs: new Date(result.modifiedTime!).getTime(),
 			atimeMs: Date.now(),
 		});
 
-		this.statsCache.set(path, stats);
-		return stats;
+		this.nodeCache.set(path, inode);
+		return inode;
 	}
 
-	protected async _create(path: string, stats: Stats): Promise<void> {
+	protected async _create(path: string, inode: Inode): Promise<void> {
 		const { result } = await this.drive.files.create({
 			resource: {
 				name: basename(path),
-				mimeType: 'application/' + (stats.isDirectory() ? 'vnd.google-apps.folder' : 'octet-stream'),
+				mimeType: 'application/' + (inode.mode & S_IFDIR ? 'vnd.google-apps.folder' : 'octet-stream'),
 				// @ts-expect-error 2353
-				media: stats.isDirectory()
-					? undefined
-					: { body: new Uint8Array(0), mimeType: 'application/octet-stream' },
+				media:
+					inode.mode & S_IFDIR
+						? undefined
+						: { body: new Uint8Array(0), mimeType: 'application/octet-stream' },
 			},
 			fields: 'id',
 		});
 
 		this.pathCache.set(path, result.id!);
-		this.statsCache.set(path, stats);
+		this.nodeCache.set(path, inode);
 		this.clearCaches(dirname(path));
 	}
 
@@ -183,10 +185,10 @@ export class GoogleDriveFS extends CloudFS<DriveError> {
 			? await this.drive.files.export({ fileId, mimeType: 'text/plain' })
 			: await this.drive.files.get({ fileId, alt: 'media' });
 
-		return encodeRaw(result.body);
+		return encodeASCII(result.body);
 	}
 
-	protected async _write(path: string, body: Uint8Array, stats: Partial<InodeLike>, syscall: string): Promise<void> {
+	protected async _write(path: string, body: Uint8Array, syscall: string): Promise<void> {
 		await this.drive.files.update({
 			fileId: await this.getFileId(path, syscall),
 			resource: { name: path.split('/').pop(), mimeType: 'application/octet-stream' },

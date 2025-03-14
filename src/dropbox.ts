@@ -1,5 +1,5 @@
-import type { Backend, InodeLike } from '@zenfs/core';
-import { Errno, ErrnoError, Stats } from '@zenfs/core';
+import type { Backend } from '@zenfs/core';
+import { Errno, ErrnoError, Inode } from '@zenfs/core';
 import { S_IFDIR, S_IFLNK, S_IFREG } from '@zenfs/core/emulation/constants.js';
 import type * as DB from 'dropbox';
 import { CloudFS, type CloudFSOptions } from './cloudfs.js';
@@ -117,19 +117,19 @@ export class DropboxFS extends CloudFS<DBReject> {
 		await this.client.filesMoveV2({ from_path: fixPath(from), to_path: fixPath(to) });
 	}
 
-	public async _stat(path: string): Promise<Stats> {
+	public async _stat(path: string): Promise<Inode> {
 		const { result } = await this.client.filesGetMetadata({ path: fixPath(path) });
 
 		switch (result['.tag']) {
 			case 'file':
-				return new Stats({
+				return new Inode({
 					mode: (result.symlink_info ? S_IFLNK : S_IFREG) | 0o777,
 					size: result.symlink_info?.target?.length || result.size,
 					atimeMs: Date.now(),
 					mtimeMs: Date.parse(result.server_modified),
 				});
 			case 'folder':
-				return new Stats({ mode: S_IFDIR });
+				return new Inode({ mode: S_IFDIR });
 			case 'deleted':
 				throw ErrnoError.With('ENOENT', path, 'stat');
 			default:
@@ -137,8 +137,8 @@ export class DropboxFS extends CloudFS<DBReject> {
 		}
 	}
 
-	protected async _create(path: string, stats: Stats): Promise<void> {
-		if (stats.isDirectory()) {
+	protected async _create(path: string, inode: Inode): Promise<void> {
+		if (inode.mode & S_IFDIR) {
 			await this.client.filesCreateFolderV2({ path: fixPath(path) });
 		} else {
 			await this.client.filesUpload({
@@ -185,7 +185,7 @@ export class DropboxFS extends CloudFS<DBReject> {
 		return fileBinary;
 	}
 
-	protected async _write(path: string, buffer: Uint8Array, stats: Partial<InodeLike>): Promise<void> {
+	protected async _write(path: string, buffer: Uint8Array): Promise<void> {
 		await this.client.filesUpload({
 			contents: new Blob([buffer], { type: 'octet/stream' }),
 			path: fixPath(path),
