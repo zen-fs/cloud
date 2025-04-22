@@ -1,28 +1,29 @@
 import type { Backend } from '@zenfs/core';
-import { Errno, ErrnoError, Inode } from '@zenfs/core';
+import { Inode } from '@zenfs/core';
 import { basename, dirname, join } from '@zenfs/core/path.js';
 import { S_IFDIR, S_IFREG } from '@zenfs/core/vfs/constants.js';
+import { withErrno, type Exception } from 'kerium';
 import { encodeASCII } from 'utilium';
 import { CloudFS, type CloudFSOptions } from './cloudfs.js';
 
 type DriveError = Error & { code?: number };
 
-function convertError(error: DriveError, path: string, syscall: string): ErrnoError {
+function convertError(error: DriveError): Exception {
 	if (!error.code) {
-		return new ErrnoError(Errno.EIO, error.message, path, syscall);
+		return withErrno('EIO', error.message);
 	}
 
 	switch (error.code) {
 		case 404:
-			return ErrnoError.With('ENOENT', path, syscall);
+			return withErrno('ENOENT');
 		case 403:
-			return ErrnoError.With('EACCES', path, syscall);
+			return withErrno('EACCES');
 		case 400:
-			return ErrnoError.With('EINVAL', path, syscall);
+			return withErrno('EINVAL');
 		case 409:
-			return ErrnoError.With('EEXIST', path, syscall);
+			return withErrno('EEXIST');
 		default:
-			return new ErrnoError(Errno.EIO, error.message, path, syscall);
+			return withErrno('EIO', error.message);
 	}
 }
 
@@ -48,7 +49,7 @@ export class GoogleDriveFS extends CloudFS<DriveError> {
 		this.dirCache.delete(dirname(path));
 	}
 
-	private async getFileId(path: string, syscall: string): Promise<string> {
+	private async getFileId(path: string): Promise<string> {
 		const cachedId = this.pathCache.get(path);
 		if (cachedId) return cachedId;
 
@@ -77,7 +78,7 @@ export class GoogleDriveFS extends CloudFS<DriveError> {
 			});
 
 			const { files } = response.result;
-			if (!files || files.length === 0) throw ErrnoError.With('ENOENT', path, syscall);
+			if (!files || files.length === 0) throw withErrno('ENOENT');
 
 			parentId = fileId;
 			fileId = files[0].id!;
@@ -89,7 +90,7 @@ export class GoogleDriveFS extends CloudFS<DriveError> {
 
 	protected async _move(from: string, to: string): Promise<void> {
 		const name = basename(to);
-		await this.drive.files.update({ fileId: await this.getFileId(from, 'rename'), resource: { name } });
+		await this.drive.files.update({ fileId: await this.getFileId(from), resource: { name } });
 		this.clearCaches(from);
 		this.clearCaches(to);
 	}
@@ -100,7 +101,7 @@ export class GoogleDriveFS extends CloudFS<DriveError> {
 		if (cachedStats) return cachedStats;
 
 		const { result } = await this.drive.files.get({
-			fileId: await this.getFileId(path, 'stat'),
+			fileId: await this.getFileId(path),
 			fields: 'mimeType, size, modifiedTime',
 		});
 
@@ -136,14 +137,12 @@ export class GoogleDriveFS extends CloudFS<DriveError> {
 		this.clearCaches(dirname(path));
 	}
 
-	protected async _delete(path: string, isDirectory: boolean): Promise<void> {
-		const syscall = isDirectory ? 'rmdir' : 'mkdir';
-
+	protected async _delete(path: string): Promise<void> {
 		try {
-			await this.drive.files.delete({ fileId: await this.getFileId(path, syscall) });
+			await this.drive.files.delete({ fileId: await this.getFileId(path) });
 			this.clearCaches(path);
 		} catch (error) {
-			throw convertError(error as DriveError, path, syscall);
+			throw convertError(error as DriveError);
 		}
 	}
 
@@ -152,7 +151,7 @@ export class GoogleDriveFS extends CloudFS<DriveError> {
 		if (cachedDir) return cachedDir;
 
 		try {
-			const parentId = await this.getFileId(path, 'readdir');
+			const parentId = await this.getFileId(path);
 			const response = await this.drive.files.list({
 				q: `'${parentId}' in parents and trashed = false`,
 				fields: 'files(id, name, mimeType)',
@@ -168,12 +167,12 @@ export class GoogleDriveFS extends CloudFS<DriveError> {
 			this.dirCache.set(path, files);
 			return files;
 		} catch (error) {
-			throw convertError(error as DriveError, path, 'readdir');
+			throw convertError(error as DriveError);
 		}
 	}
 
-	protected async _read(path: string, syscall: string): Promise<Uint8Array> {
-		const fileId = await this.getFileId(path, syscall);
+	protected async _read(path: string): Promise<Uint8Array> {
+		const fileId = await this.getFileId(path);
 
 		// First get the file metadata to check its type
 		const metadata = await this.drive.files.get({ fileId, fields: 'mimeType, size' });
@@ -188,9 +187,9 @@ export class GoogleDriveFS extends CloudFS<DriveError> {
 		return encodeASCII(result.body);
 	}
 
-	protected async _write(path: string, body: Uint8Array, syscall: string): Promise<void> {
+	protected async _write(path: string, body: Uint8Array): Promise<void> {
 		await this.drive.files.update({
-			fileId: await this.getFileId(path, syscall),
+			fileId: await this.getFileId(path),
 			resource: { name: path.split('/').pop(), mimeType: 'application/octet-stream' },
 			// @ts-expect-error 2353
 			media: { mimeType: 'application/octet-stream', body },

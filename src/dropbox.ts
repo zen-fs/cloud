@@ -1,7 +1,8 @@
 import type { Backend } from '@zenfs/core';
-import { Errno, ErrnoError, Inode } from '@zenfs/core';
+import { Inode } from '@zenfs/core';
 import { S_IFDIR, S_IFLNK, S_IFREG } from '@zenfs/core/emulation/constants.js';
 import type * as DB from 'dropbox';
+import { withErrno, type Exception } from 'kerium';
 import { CloudFS, type CloudFSOptions } from './cloudfs.js';
 
 /**
@@ -28,68 +29,63 @@ type ConvertableError =
 type DBError = ConvertableError | DB.Error<ConvertableError>;
 type DBReject = DBError | DB.DropboxResponseError<DBError>;
 /**
- * Converts a Dropbox error into an `ErrnoError`.
+ * Converts a Dropbox error into an `Exception`.
  *
  * Consider changing the behavior from returning the error to just throwing it.
  */
-function convertError(error: DBReject, path: string, syscall: string, message?: string): ErrnoError {
+function convertError(error: DBReject, message?: string): Exception {
 	if ('status' in error) {
 		error = error.error;
 	}
 
 	if (!('.tag' in error)) {
-		return convertError(
-			error.error,
-			path,
-			syscall,
-			error.user_message?.text || error.error_summary || error.error.toString()
-		);
+		return convertError(error.error, error.user_message?.text || error.error_summary || error.error.toString());
 	}
 	switch (error['.tag']) {
 		case 'path':
-			return convertError('path' in error ? error.path : error.reason, path, syscall, message);
+			return convertError('path' in error ? error.path : error.reason, message);
 		case 'path_lookup':
-			return convertError(error.path_lookup, path, syscall, message);
+			return convertError(error.path_lookup, message);
 		case 'path_write':
-			return convertError(error.path_write, path, syscall, message);
+			return convertError(error.path_write, message);
 		case 'malformed_path':
 		case 'disallowed_name':
 		case 'cant_move_folder_into_itself':
 		case 'duplicated_or_nested_paths':
-			return new ErrnoError(Errno.EBADF, message, path, syscall);
+			return withErrno('EBADF', message);
 		case 'not_found':
-			return ErrnoError.With('ENOENT', path, syscall);
+			return withErrno('ENOENT');
 		case 'not_file':
-			return ErrnoError.With('EISDIR', path, syscall);
+			return withErrno('EISDIR');
 		case 'not_folder':
-			return ErrnoError.With('ENOTDIR', path, syscall);
+			return withErrno('ENOTDIR');
 		case 'restricted_content':
 		case 'conflict':
 		case 'no_write_permission':
 		case 'team_folder':
 		case 'cant_copy_shared_folder':
 		case 'cant_nest_shared_folder':
-			return ErrnoError.With('EPERM', path, syscall);
+			return withErrno('EPERM');
 		case 'insufficient_space':
 		case 'insufficient_quota':
 		case 'too_many_files':
-			return new ErrnoError(Errno.ENOSPC, message, path, syscall);
+			return withErrno('ENOSPC', message);
 		case 'too_many_write_operations':
-			return ErrnoError.With('EAGAIN', path, syscall);
+			return withErrno('EAGAIN');
 		case 'locked':
-			return ErrnoError.With('EBUSY', path, syscall);
+			return withErrno('EBUSY');
 		case 'content_hash_mismatch':
-			return ErrnoError.With('EBADMSG', path, syscall);
+			return withErrno('EBADMSG');
 		case 'unsupported_content_type':
-			return ErrnoError.With('ENOMSG', path, syscall);
+			return withErrno('ENOMSG');
 		case 'payload_too_large':
-			return ErrnoError.With('EMSGSIZE', path, syscall);
+			return withErrno('EMSGSIZE');
 		case 'from_lookup':
-			return convertError(error.from_lookup, path, syscall, message);
+			return convertError(error.from_lookup, message);
 		case 'from_write':
-			return convertError(error.from_write, path, syscall, message);
+			return convertError(error.from_write, message);
 		case 'to':
-			return convertError(error.to, path, syscall, message);
+			return convertError(error.to, message);
 		case 'cant_transfer_ownership':
 		case 'internal_error':
 		case 'cant_move_shared_folder':
@@ -99,9 +95,9 @@ function convertError(error: DBReject, path: string, syscall: string, message?: 
 		case 'template_error':
 		case 'properties_error':
 		case 'other':
-			return new ErrnoError(Errno.EIO, message, path, syscall);
+			return withErrno('EIO', message);
 		default:
-			return new ErrnoError(Errno.EINVAL, 'Unknown error tag: ' + error['.tag'], path, syscall);
+			return withErrno('EINVAL', 'Unknown error tag: ' + error['.tag']);
 	}
 }
 
@@ -131,9 +127,9 @@ export class DropboxFS extends CloudFS<DBReject> {
 			case 'folder':
 				return new Inode({ mode: S_IFDIR });
 			case 'deleted':
-				throw ErrnoError.With('ENOENT', path, 'stat');
+				throw withErrno('ENOENT');
 			default:
-				throw new ErrnoError(Errno.EINVAL, 'Invalid file type', path, 'stat');
+				throw withErrno('EINVAL', 'Invalid file type');
 		}
 	}
 
@@ -166,7 +162,7 @@ export class DropboxFS extends CloudFS<DBReject> {
 
 		while (result.has_more && i < 100) {
 			if (++i >= 100) {
-				throw new ErrnoError(Errno.EIO, 'Infinite loop prevented', path, 'readdir');
+				throw withErrno('EIO', 'Infinite loop prevented');
 			}
 
 			const response = await this.client.filesListFolderContinue({ cursor: result.cursor });
