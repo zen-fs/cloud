@@ -1,7 +1,7 @@
 # ZenFS Cloud
 
 > [!WARNING]
-> This package was implemented very recently and may not be stable.
+> This package has not been thoroughly and may not be stable.
 >
 > If you find a bug, please report it. Thanks!
 
