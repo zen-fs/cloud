@@ -1,15 +1,10 @@
 # ZenFS Cloud
 
-> [!WARNING]
-> This package has not been thoroughly and may not be stable.
->
-> If you find a bug, please report it. Thanks!
-
 This package adds backends for many cloud providers to ZenFS, including:
 
 - Dropbox
 - Amazon Web Services' S3
-- Google Drive (planned)
+- Google Drive
 
 For more information, see the [API documentation](https://zenfs.dev/cloud).
 
