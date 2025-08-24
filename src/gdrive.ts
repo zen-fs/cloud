@@ -55,7 +55,7 @@ export class GoogleDriveFS extends CloudFS<DriveError> {
 
 		if (path === '/') return 'root';
 
-		const segments = path.split('/').filter(Boolean);
+		const segments = path.split('/').filter(v => v);
 		let parentId: string | undefined = 'root';
 		let fileId: string | undefined = 'root';
 		let currentPath = '';
