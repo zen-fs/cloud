@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 import type { S3 } from '@aws-sdk/client-s3';
 import type { ResponseMetadata } from '@aws-sdk/types';
 import type { Backend, FileSystem, InodeLike } from '@zenfs/core';

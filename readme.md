@@ -8,19 +8,23 @@ This package adds backends for many cloud providers to ZenFS, including:
 
 For more information, see the [API documentation](https://zenfs.dev/cloud).
 
-> [!IMPORTANT]
-> Please read the [ZenFS core documentation](https://zenfs.dev/core)!
+Please read the [ZenFS core documentation](https://zenfs.dev/core)!
 
 ### Installing
+
+> [!IMPORTANT]
+> This project is licensed under the LGPL (v3+).
 
 ```sh
 npm install @zenfs/cloud
 ```
 
+## Examples
+
 > [!NOTE]
 > Examples are written using ESM.
 
-## Dropbox
+### Dropbox
 
 ```ts
 import { configure, fs } from '@zenfs/core';
@@ -42,7 +46,7 @@ await configure({
 });
 ```
 
-## S3
+### S3
 
 > [!CAUTION]
 > This backend is still in the process of being developed and is not stable.

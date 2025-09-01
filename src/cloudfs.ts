@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
 import type { CreationOptions, InodeLike } from '@zenfs/core';
 import { Async, FileSystem, Inode } from '@zenfs/core';
 import { dirname } from '@zenfs/core/path.js';
