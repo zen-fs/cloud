@@ -21,9 +21,6 @@ npm install @zenfs/cloud
 
 ## Examples
 
-> [!NOTE]
-> Examples are written using ESM.
-
 ### Dropbox
 
 ```ts
