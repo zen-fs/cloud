@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 import type { Backend } from '@zenfs/core';
 import { Inode } from '@zenfs/core';
-import { basename, dirname, join } from '@zenfs/core/path.js';
-import { S_IFDIR, S_IFREG } from '@zenfs/core/vfs/constants.js';
+import { basename, dirname, join } from '@zenfs/core/path';
+import { S_IFDIR, S_IFREG } from '@zenfs/core/constants';
 import { withErrno, type Exception } from 'kerium';
 import { encodeASCII } from 'utilium';
 import { CloudFS, type CloudFSOptions } from './cloudfs.js';

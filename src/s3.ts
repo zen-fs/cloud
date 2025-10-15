@@ -3,7 +3,7 @@ import type { S3 } from '@aws-sdk/client-s3';
 import type { ResponseMetadata } from '@aws-sdk/types';
 import type { Backend, FileSystem, InodeLike } from '@zenfs/core';
 import { _inode_fields, InMemory, Inode, normalizePath } from '@zenfs/core';
-import { join } from '@zenfs/core/path.js';
+import { join } from '@zenfs/core/path';
 import { log, withErrno, type Exception } from 'kerium';
 import { CloudFS, type CloudFSOptions } from './cloudfs.js';
 
