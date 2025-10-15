@@ -1,6 +1,6 @@
 {
 	"name": "@zenfs/cloud",
-	"version": "0.2.3",
+	"version": "0.2.4",
 	"description": "ZenFS Cloud backends",
 	"funding": {
 		"type": "individual",
