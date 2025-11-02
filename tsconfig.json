@@ -10,5 +10,11 @@
 		"verbatimModuleSyntax": true
 	},
 	"include": ["src/**/*.ts"],
-	"exclude": ["node_modules"]
+	"exclude": ["node_modules"],
+	"typedocOptions": {
+		"entryPoints": ["./src/index.ts"],
+		"name": "ZenFS Cloud",
+		"out": "docs",
+		"excludeReferences": true
+	}
 }
