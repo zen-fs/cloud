@@ -17,6 +17,6 @@ The practical goal of this exception is to allow ZenFS to be used in modern web 
 
 For example, in a list of libraries you could have:
 
-> - [ZenFS](https://github.com/zen-fs/core), Licensed under the [LGPL 3.0 or later](https://www.gnu.org/licenses/lgpl-3.0.html) and [COPYING.md](https://github.com/zen-fs/core/blob/main/COPYING.md), Copyright © James Prevett and other ZenFS contributors
+> - [@zenfs/cloud](https://github.com/zen-fs/cloud), Licensed under the [LGPL 3.0 or later](https://www.gnu.org/licenses/lgpl-3.0.html) and [COPYING.md](https://github.com/zen-fs/cloud/blob/main/COPYING.md), Copyright © James Prevett and other ZenFS contributors
 
 **This is a very easy requirement, please respect it.**
