@@ -2,12 +2,14 @@
 	"compilerOptions": {
 		"module": "NodeNext",
 		"target": "ES2020",
+		"rootDir": "src",
 		"outDir": "dist",
-		"lib": ["ESNext", "ESNext.Disposable"],
+		"lib": ["ESNext"],
 		"moduleResolution": "NodeNext",
 		"declaration": true,
 		"strict": true,
-		"verbatimModuleSyntax": true
+		"verbatimModuleSyntax": true,
+		"types": ["gapi", "gapi.client.drive-v3"]
 	},
 	"include": ["src/**/*.ts"],
 	"exclude": ["node_modules"],
