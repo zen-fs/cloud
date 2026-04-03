@@ -68,7 +68,7 @@ export class S3FileSystem extends CloudFS<_S3Error> {
 	public async _stat(path: string): Promise<Inode> {
 		const { Metadata, ContentLength, LastModified } = await this.client.headObject({
 			Bucket: this.bucketName,
-			Key: path,
+			Key: path.slice(1),
 		});
 
 		if (!Metadata) throw withErrno('ENODATA');
@@ -84,7 +84,7 @@ export class S3FileSystem extends CloudFS<_S3Error> {
 	public async readdir(path: string): Promise<string[]> {
 		const response = await this.client.listObjectsV2({
 			Bucket: this.bucketName,
-			Prefix: path == '/' ? this.prefix : path,
+			Prefix: path == '/' ? this.prefix : path.slice(1),
 			Delimiter: '/',
 		});
 
@@ -114,7 +114,7 @@ export class S3FileSystem extends CloudFS<_S3Error> {
 		const { $metadata: $md } = await this.client.copyObject({
 			Bucket: this.bucketName,
 			CopySource: join(this.bucketName, from),
-			Key: to,
+			Key: to.slice(1),
 		});
 
 		checkStatus($md, 200);
@@ -128,7 +128,7 @@ export class S3FileSystem extends CloudFS<_S3Error> {
 
 		const { $metadata: $md } = await this.client.putObject({
 			Bucket: this.bucketName,
-			Key: path,
+			Key: path.slice(1),
 			Body: new Uint8Array(),
 			ContentLength: 0,
 			Metadata: stringifyStats(inode),
@@ -154,7 +154,7 @@ export class S3FileSystem extends CloudFS<_S3Error> {
 
 		const { $metadata: $md } = await this.client.putObject({
 			Bucket: this.bucketName,
-			Key: path,
+			Key: path.slice(1),
 			Body: data,
 			ContentLength: data.byteLength,
 			Metadata: stringifyStats(inode),
@@ -168,7 +168,7 @@ export class S3FileSystem extends CloudFS<_S3Error> {
 
 		const { $metadata: $md } = await this.client.putObject({
 			Bucket: this.bucketName,
-			Key: path,
+			Key: path.slice(1),
 			Body: data,
 			ContentLength: data.byteLength,
 			ContentType: 'application/octet-stream',
