@@ -21,6 +21,10 @@ npm install @zenfs/cloud
 
 ## Examples
 
+> [!NOTE]
+> Due to the nature of cloud backends, it isn't possible to test them in CI/CD.
+> Please report any issues so they can be fixed!
+
 ### Dropbox
 
 ```ts
@@ -45,9 +49,6 @@ await configure({
 
 ### S3
 
-> [!CAUTION]
-> This backend is still in the process of being developed and is not stable.
-
 ```ts
 import { configure, fs } from '@zenfs/core';
 import { S3Bucket } from '@zenfs/cloud';
@@ -63,6 +64,22 @@ await configure({
 			backend: S3Bucket,
 			bucketName: 'your-bucket',
 			client,
+		},
+	},
+});
+```
+
+### Google Drive
+
+```ts
+import { configure, fs } from '@zenfs/core';
+import { GoogleDrive } from '@zenfs/cloud';
+
+await configure({
+	mounts: {
+		'/mnt/gdrive': {
+			backend: GoogleDrive,
+			drive: gapi.client.drive,
 		},
 	},
 });
