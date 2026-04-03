@@ -4,7 +4,7 @@ import { Async, FileSystem, Inode } from '@zenfs/core';
 import { dirname } from '@zenfs/core/path';
 import { S_IFDIR, S_IFREG } from '@zenfs/core/constants';
 import { Exception, withErrno } from 'kerium';
-import { extendBuffer } from 'utilium/buffer.js';
+import { extendBuffer } from 'utilium/buffer';
 
 interface CacheEntry {
 	time: number;
