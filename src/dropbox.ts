@@ -182,7 +182,7 @@ export class DropboxFS extends CloudFS<DBReject> {
 		return fileBinary;
 	}
 
-	protected async _write(path: string, buffer: Uint8Array): Promise<void> {
+	protected async _write(path: string, buffer: Uint8Array<ArrayBuffer>): Promise<void> {
 		await this.client.filesUpload({
 			contents: new Blob([buffer], { type: 'octet/stream' }),
 			path: fixPath(path),
