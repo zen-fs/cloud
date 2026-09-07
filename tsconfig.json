@@ -12,11 +12,5 @@
 		"types": ["gapi", "gapi.client.drive-v3"]
 	},
 	"include": ["src/**/*.ts"],
-	"exclude": ["node_modules"],
-	"typedocOptions": {
-		"entryPoints": ["./src/index.ts"],
-		"name": "ZenFS Cloud",
-		"out": "docs",
-		"excludeReferences": true
-	}
+	"exclude": ["node_modules"]
 }
