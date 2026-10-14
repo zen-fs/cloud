@@ -84,3 +84,8 @@ await configure({
 	},
 });
 ```
+
+## License
+
+[@zenfs/cloud](https://github.com/zen-fs/cloud) is licensed under the [LGPL 3.0 or later](https://www.gnu.org/licenses/lgpl-3.0.html) and [COPYING.md](https://github.com/zen-fs/cloud/blob/main/COPYING.md).
+Copyright © James Prevett and other ZenFS contributors.
